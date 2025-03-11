@@ -2,7 +2,8 @@
 
 # Parameters
 RUNDIR=$SCRATCH/$USER/gfdl_f/test_netcdf4
-niter=1
+LAYOUTS="1 2 3 6 12 24 32"
+NITER=1
 
 LOG=`pwd`/perf.log
 WRITE_PROG=`pwd`/test_write
@@ -13,7 +14,7 @@ SRUN=`which srun`
 rm -rf $RUNDIR
 mkdir $RUNDIR
 
-echo "test_id,nx,ny,layout_x,layout_y,layout_io_x,layout_io_y,niter,netcdf_format,chunk_size_x,chunk_size_y,chunk_size_z,deflate level,shuffle,use_collective,file_size,write_time,read_time" >${LOG}
+echo "test_id,nx,ny,layout_x,layout_y,layout_io_x,layout_io_y,netcdf_format,chunk_size_x,chunk_size_y,chunk_size_z,deflate level,shuffle,use_collective,file_size,write_time,read_time" >${LOG}
 
 i=0
 
@@ -33,7 +34,6 @@ run_test () {
   use_collective=$8
 
   npes=$((layout_x * layout_y))
-  npes_io=$((layout_io_x * layout_io_y))
 
   # Skip impossible layouts
   [[ $((nx % layout_x)) != 0 ]] && return 0
@@ -49,9 +49,6 @@ run_test () {
   # Skip impossible chunk sizes
   [[ $(( (nx / layout_io_x) % chunksize_x)) != 0 ]] && return 0
   [[ $(( (ny / layout_io_y) % chunksize_y)) != 0 ]] && return 0
-  
-  # Skip the collective I/O test if the I/O layout is 1x1
-  [[ "$use_collective" = "true" && $npes_io == 1 ]] && return 0
 
   (( i++ ))
 
@@ -63,7 +60,7 @@ run_test () {
 &test_nml
     nx = $nx
     ny = $ny
-    niter = $niter
+    niter = $NITER
     layout = $layout_x , $layout_y
     io_layout = $layout_io_x , $layout_io_y
     chunksizes = ${chunksize_x}, ${chunksize_y}, ${chunksize_z}
@@ -101,14 +98,14 @@ EOF
   read_time=`awk '/Total runtime/ {print $6}' read.log`
   file_size=`ls -lh data.nc | awk '{print $5}'`
 
-  echo "${i},${nx},${ny},${layout_x},${layout_y},${layout_io_x},${layout_io_y},${niter},${netcdf_format},${chunksize_x},${chunksize_y},${chunksize_z},${deflate_level},${shuffle},${use_collective},${file_size},${write_time},${read_time}" >>${LOG}
+  echo "${i},${nx},${ny},${layout_x},${layout_y},${layout_io_x},${layout_io_y},${netcdf_format},${chunksize_x},${chunksize_y},${chunksize_z},${deflate_level},${shuffle},${use_collective},${file_size},${write_time},${read_time}" >>${LOG}
 }
 
 for n in 96 384 # 3072
 do
-  for layout in 1 2 3 6 12 24 32
+  for layout in $LAYOUTS
   do
-    for layout_io in 1 2 3 6 12 24
+    for layout_io in $LAYOUTS
     do
       run_test $n $layout $layout_io 64bit 1 0 false false
 
@@ -118,7 +115,12 @@ do
         do
           for shuffle in true false
           do
-            for use_collective in true false
+            USE_COLLECTIVE=false
+
+            # Perform the collective I/O test if the layout and I/O layout are the same
+            [[ $layout_io = $layout ]] && USE_COLLECTIVE+=" true"
+
+            for use_collective in $USE_COLLECTIVE
             do
               run_test $n $layout $layout_io netcdf4 $chunksize $deflate_level $shuffle $use_collective
             done
