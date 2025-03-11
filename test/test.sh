@@ -1,6 +1,8 @@
 #!/bin/sh
 
+# Parameters
 RUNDIR=$SCRATCH/$USER/gfdl_f/test_netcdf4
+niter=1
 
 LOG=`pwd`/perf.log
 WRITE_PROG=`pwd`/test_write
@@ -22,14 +24,13 @@ run_test () {
   layout_y=$2
   layout_io_x=$3
   layout_io_y=$3
-  niter=$4
-  netcdf_format=$5
-  chunksize_x=$6
-  chunksize_y=$6
+  netcdf_format=$4
+  chunksize_x=$5
+  chunksize_y=$5
   chunksize_z=1
-  deflate_level=$7
-  shuffle=$8
-  use_collective=$9
+  deflate_level=$6
+  shuffle=$7
+  use_collective=$8
 
   npes=$((layout_x * layout_y))
   npes_io=$((layout_io_x * layout_io_y))
@@ -109,7 +110,7 @@ do
   do
     for layout_io in 1 2 3 6 12 24
     do
-      run_test $n $layout $layout_io 1 64bit 1 0 false false
+      run_test $n $layout $layout_io 64bit 1 0 false false
 
       for chunksize in 1 2 3 4
       do
@@ -119,7 +120,7 @@ do
           do
             for use_collective in true false
             do
-              run_test $n $layout $layout_io 1 netcdf4 $chunksize $deflate_level $shuffle $use_collective
+              run_test $n $layout $layout_io netcdf4 $chunksize $deflate_level $shuffle $use_collective
             done
 	  done
         done
