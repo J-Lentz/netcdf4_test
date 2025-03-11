@@ -1,0 +1,3 @@
+[submodule "FMS"]
+	path = FMS
+	url = https://github.com/NOAA-GFDL/FMS.git
