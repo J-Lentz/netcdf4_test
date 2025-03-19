@@ -1,8 +1,8 @@
-#!/bin/sh
+#!/bin/bash
 
 # Parameters
-RUNDIR=$SCRATCH/$USER/gfdl_f/test_netcdf4
-LAYOUTS="1 2 3 6 12 24 32"
+BASEDIR=$SCRATCH/$USER/gfdl_f/test_netcdf4
+LAYOUTS="1 2 3 6 12"
 NITER=1
 
 LOG=`pwd`/perf.log
@@ -11,10 +11,9 @@ READ_PROG=`pwd`/test_read
 
 SRUN=`which srun`
 
-rm -rf $RUNDIR
-mkdir $RUNDIR
+rm -rf $BASEDIR
 
-echo "test_id,nx,ny,layout_x,layout_y,layout_io_x,layout_io_y,netcdf_format,chunk_size_x,chunk_size_y,chunk_size_z,deflate level,shuffle,use_collective,file_size,write_time,read_time" >${LOG}
+echo "test_id,nx,ny,layout_x,layout_y,layout_io_x,layout_io_y,netcdf_format,chunk_size_x,chunk_size_y,chunk_size_z,deflate level,shuffle,use_collective,file_size,write_time,read_time,write_mem,read_mem" >${LOG}
 
 i=0
 
@@ -47,14 +46,16 @@ run_test () {
   [[ $((layout_y % layout_io_y)) != 0 ]] && return 0
 
   # Skip impossible chunk sizes
-  [[ $(( (nx / layout_io_x) % chunksize_x)) != 0 ]] && return 0
-  [[ $(( (ny / layout_io_y) % chunksize_y)) != 0 ]] && return 0
+  [[ $chunksize_x != 0 && $(( (nx / layout_io_x) % chunksize_x)) != 0 ]] && return 0
+  [[ $chunksize_y != 0 && $(( (ny / layout_io_y) % chunksize_y)) != 0 ]] && return 0
 
   (( i++ ))
 
   echo "Running test $i"
-  mkdir ${RUNDIR}/${i}
-  cd ${RUNDIR}/${i}
+
+  RUNDIR=${BASEDIR}/${layout_x}x${layout_y}/${layout_io_x}x${layout_io_y}/${netcdf_format}/${i}
+  mkdir -p $RUNDIR
+  cd $RUNDIR
 
   cat >input.nml <<EOF
 &test_nml
@@ -80,8 +81,8 @@ EOF
   then
     echo "Finished writing data"
   else
-    echo "write failure" | tee err.write
-    return 1
+    echo "write failure" | tee FAIL
+    exit 1
   fi
 
   $SRUN --ntasks=${npes} $READ_PROG |& tee read.log
@@ -90,26 +91,30 @@ EOF
   then
     echo "Finished reading data"
   else
-    echo "read failure" | tee err.read
-    return 1
+    echo "read failure" | tee FAIL
+    exit 1
   fi
 
-  write_time=`awk '/Total runtime/ {print $6}' write.log`
-  read_time=`awk '/Total runtime/ {print $6}' read.log`
-  file_size=`ls -lh data.nc | awk '{print $5}'`
+  write_tmax=`awk '/Total runtime/ {print $5}' write.log`
+  read_tmax=`awk '/Total runtime/ {print $5}' read.log`
+  file_size=`ls -l data.nc* | awk 'BEGIN {total=0} {total+=$5} END {print total / 1024^2}'`
 
-  echo "${i},${nx},${ny},${layout_x},${layout_y},${layout_io_x},${layout_io_y},${netcdf_format},${chunksize_x},${chunksize_y},${chunksize_z},${deflate_level},${shuffle},${use_collective},${file_size},${write_time},${read_time}" >>${LOG}
+  memuse_prog='BEGIN {m=0} {if ($1>m) m=$1} END {print m}'
+  memuse_write=`awk "$memuse_prog" memuse.write.*`
+  memuse_read=`awk "$memuse_prog" memuse.read.*`
+
+  echo "${i},${nx},${ny},${layout_x},${layout_y},${layout_io_x},${layout_io_y},${netcdf_format},${chunksize_x},${chunksize_y},${chunksize_z},${deflate_level},${shuffle},${use_collective},${file_size} MiB,${write_tmax} s,${read_tmax} s,${memuse_write} MiB,${memuse_read} MiB" >>${LOG}
 }
 
-for n in 96 384 # 3072
+for n in 96 # 384 3072 6144
 do
   for layout in $LAYOUTS
   do
     for layout_io in $LAYOUTS
     do
-      run_test $n $layout $layout_io 64bit 1 0 false false
+      run_test $n $layout $layout_io 64bit 0 0 false false
 
-      for chunksize in 1 2 3 4
+      for chunksize in 0 16 32 96
       do
         for deflate_level in `seq 0 9`
         do
@@ -118,7 +123,7 @@ do
             USE_COLLECTIVE=false
 
             # Perform the collective I/O test if the layout and I/O layout are the same
-            [[ $layout_io = $layout ]] && USE_COLLECTIVE+=" true"
+            [[ $layout != 1 && $layout_io = $layout ]] && USE_COLLECTIVE+=" true"
 
             for use_collective in $USE_COLLECTIVE
             do

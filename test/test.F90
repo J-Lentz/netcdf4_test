@@ -7,11 +7,11 @@ use fms2_io_mod, only: FmsNetcdfDomainFile_t, open_file, close_file, flush_file,
                        register_axis, register_variable_attribute, write_data, &
                        read_data, unlimited
 use netcdf_io_mod, only: netcdf_add_variable
-use mpp_mod, only: mpp_error, fatal, stderr, input_nml_file
+use mpp_mod, only: mpp_error, fatal, stderr, input_nml_file, mpp_pe
 use mpp_domains_mod, only : mpp_domains_set_stack_size, mpp_define_domains, &
                             mpp_define_io_domain, mpp_get_compute_domain, &
                             mpp_get_data_domain, domain2d
-use mpp_memutils_mod, only: mpp_print_memuse_stats
+use mpp_memutils_mod, only: mpp_mem_dump
 use fms_string_utils_mod, only: string
 use random_numbers_mod, only: randomNumberStream, initializeRandomNumberStream, &
                               getRandomNumbers
@@ -23,9 +23,11 @@ integer :: nx
 integer :: ny
 integer :: niter
 character(*), parameter :: filename="data.nc"
-integer, dimension(2) :: layout, io_layout
-integer, dimension(3) :: chunksizes
-logical :: use_collective
+
+integer, dimension(2) :: layout = [1, 1]
+integer, dimension(2) :: io_layout = [1, 1]
+integer, dimension(3) :: chunksizes = [0, 0, 0]
+logical :: use_collective = .false.
 
 type(domain2d) :: domain
 integer :: is, ie, js, je !< Data domain
@@ -38,18 +40,27 @@ namelist /test_nml/ nx, ny, niter, layout, io_layout, chunksizes, use_collective
 call fms_init
 
 call read_test_nml
-fileobj%use_collective = use_collective
+
+if (use_collective) then
+#ifdef WRITE_TEST
+  io_layout = [1, 1]
+#endif
+
+#ifdef READ_TEST
+  fileobj%use_collective = .true.
+#endif
+endif
 
 call define_domain
 
 #ifdef WRITE_TEST
 call write_netcdf_file
-!call report_memuse("write")
+call report_memuse("write")
 #endif
 
 #ifdef READ_TEST
 call read_netcdf_file
-!call report_memuse("read")
+call report_memuse("read")
 #endif
 
 call fms_end
@@ -97,8 +108,12 @@ subroutine write_netcdf_file
 
   call test_netcdf_file_open("write")
 
-  call netcdf_add_variable(fileobj, "random", "double", dimensions=["x", "y", "iter"], &
-                           chunksizes=chunksizes)
+  if (product(chunksizes).ne.0) then
+    call netcdf_add_variable(fileobj, "random", "double", dimensions=["x", "y", "iter"], &
+                             chunksizes=chunksizes)
+  else
+    call netcdf_add_variable(fileobj, "random", "double", dimensions=["x", "y", "iter"])
+  endif
 
   do iter=1,niter
     call getRandomNumbers(random_stream, rand)
@@ -122,14 +137,16 @@ subroutine read_netcdf_file
   call close_file(fileobj)
 end subroutine read_netcdf_file
 
-!subroutine report_memuse(suffix)
-  !character(*), intent(in) :: suffix
-  !integer :: unit
+subroutine report_memuse(suffix)
+  character(*), intent(in) :: suffix
+  integer :: unit
+  real(r8_kind) :: memuse
 
-  !open(newunit=unit, file="memuse." // suffix, action="write", status="new")
-  !call mpp_memuse_end("NetCDF-4 test", unit)
-  !close(unit)
-  !call mpp_print_memuse_stats("netcdf test")
-!end subroutine report_memuse
+  call mpp_mem_dump(memuse)
+
+  open(newunit=unit, file="memuse." // suffix // "." // string(mpp_pe()), action="write", status="new")
+  write(unit, "(f8.3)") memuse
+  close(unit)
+end subroutine report_memuse
 
 end program test_netcdf_perf

@@ -7,7 +7,7 @@ CPPFLAGS = -I$(FMS_ROOT)/.mods
 FFLAGS ?= -O3 -traceback -fopenmp
 
 LDFLAGS += -L$(FMS_ROOT)/libFMS/.libs
-LDLIBS += -lFMS
+LDLIBS += -l:libFMS.a
 
 all: $(PROG)_read $(PROG)_write
 
@@ -20,4 +20,4 @@ $(PROG)_write: $(PROG).F90
 .PHONY: clean
 
 clean:
-	rm -f $(PROG)_read $(PROG)_write *.nc *.out
+	rm -f $(PROG)_read $(PROG)_write perf.log
