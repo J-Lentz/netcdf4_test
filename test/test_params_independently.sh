@@ -3,7 +3,6 @@
 # Parameters
 BASEDIR=$SCRATCH/$USER/gfdl_f/test_netcdf4
 LAYOUTS="1 2 3 6"
-NITER=10
 
 LOG=`pwd`/perf.log
 WRITE_PROG=`pwd`/test_write
@@ -57,11 +56,14 @@ run_test () {
   mkdir -p $RUNDIR
   cd $RUNDIR
 
+  # Aim for a filesize of about 1 GB
+  niter=$(( 1024*1024*1024 / (nx*ny*8) ))
+
   cat >input.nml <<EOF
 &test_nml
     nx = $nx
     ny = $ny
-    niter = $NITER
+    niter = $niter
     layout = $layout_x , $layout_y
     io_layout = $layout_io_x , $layout_io_y
     chunksizes = ${chunksize_x}, ${chunksize_y}, ${chunksize_z}
@@ -112,24 +114,28 @@ function run_netcdf4_battery () {
   layout_io=$3
   use_collective=$4
 
-  for chunksize in 0 $((n/2)) $((n/3)) $((n/4)) $((n/6))
+  for chunksize in 0 $n
   do
-    for deflate_level in `seq 0 9`
-    do
-      for shuffle in true false
-      do
-        run_test $n $layout $layout_io netcdf4 $chunksize $deflate_level $shuffle $use_collective
-      done
-    done
+    run_test $n $layout $layout_io netcdf4 $chunksize 0 false $use_collective
+  done
+
+  for deflate_level in `seq 0 9`
+  do
+    run_test $n $layout $layout_io netcdf4 0 $deflate_level false $use_collective
+  done
+
+  for shuffle in true false
+  do
+    run_test $n $layout $layout_io netcdf4 0 0 $shuffle $use_collective
   done
 }
 
-for n in 96 384 # 3072 6144
+for n in 96 384 3072 6144
 do
   for layout in $LAYOUTS
   do
-    # NetCDF-4 tests with use_collective=.true.
-    run_netcdf4_battery $n $layout $layout true
+    # NetCDF-4 test with use_collective=.true.
+    run_test $n $layout $layout netcdf4 0 0 false true
 
     for layout_io in $LAYOUTS
     do
