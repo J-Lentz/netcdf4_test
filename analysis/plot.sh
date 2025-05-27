@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 basedir=`pwd`
 data_basedir=$basedir/data
