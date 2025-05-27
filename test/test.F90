@@ -10,7 +10,7 @@ use netcdf_io_mod, only: netcdf_add_variable
 use mpp_mod, only: mpp_error, fatal, stderr, input_nml_file, mpp_pe
 use mpp_domains_mod, only : mpp_domains_set_stack_size, mpp_define_domains, &
                             mpp_define_io_domain, mpp_get_compute_domain, &
-                            mpp_get_data_domain, domain2d
+                            mpp_get_data_domain, domain2d, mpp_get_domain_tile_commid
 use mpp_memutils_mod, only: mpp_mem_dump
 use fms_string_utils_mod, only: string
 use random_numbers_mod, only: randomNumberStream, initializeRandomNumberStream, &
@@ -30,7 +30,7 @@ integer, dimension(3) :: chunksizes = [0, 0, 0]
 logical :: use_collective = .false.
 
 type(domain2d) :: domain
-integer :: is, ie, js, je !< Data domain
+integer :: isd, ied, jsd, jed !< Data domain
 integer :: isc, iec, jsc, jec !< Compute domain
 
 type(FmsNetcdfDomainFile_t) :: fileobj
@@ -59,6 +59,7 @@ call report_memuse("write")
 #endif
 
 #ifdef READ_TEST
+fileobj%tile_comm = mpp_get_domain_tile_commid(domain)
 call read_netcdf_file
 call report_memuse("read")
 #endif
@@ -68,13 +69,13 @@ call fms_end
 contains
 
 subroutine define_domain
-  integer, parameter :: stack_size = 17280000
+  integer, parameter :: stack_size = 301989888
 
   call mpp_domains_set_stack_size(stack_size)
   call mpp_define_domains( [1, nx, 1, ny], layout, domain)
   call mpp_define_io_domain(domain, io_layout)
 
-  call mpp_get_data_domain(domain, is, ie, js, je)
+  call mpp_get_data_domain(domain, isd, ied, jsd, jed)
   call mpp_get_compute_domain(domain, isc, iec, jsc, jec)
 end subroutine define_domain
 
@@ -98,12 +99,11 @@ subroutine test_netcdf_file_open(mode)
 end subroutine test_netcdf_file_open
 
 subroutine write_netcdf_file
-  integer, parameter :: seed = 0
-  type(randomNumberStream) :: random_stream !> Random number stream
-  integer :: iter
-
+  type(randomNumberStream) :: random_stream
+  integer :: seed, iter
   real(KIND_), dimension(isc:iec, jsc:jec) :: rand
 
+  seed = mpp_pe()
   random_stream = initializeRandomNumberStream(seed)
 
   call test_netcdf_file_open("write")
@@ -126,7 +126,7 @@ end subroutine write_netcdf_file
 
 subroutine read_netcdf_file
   integer :: iter
-  real(KIND_), dimension(is:ie, js:je) :: rand
+  real(KIND_), dimension(isd:ied, jsd:jed) :: rand
 
   call test_netcdf_file_open("read")
 
