@@ -1,12 +1,14 @@
 #!/bin/bash
-set -e
+set -euo pipefail
+#set -x
 
 basedir=`pwd`
 data_basedir=$basedir/data
 plot_basedir=$basedir/plots
 perf_log=$basedir/../test/perf.log
+GRIDS="96 384 3072 6144"
 
-dirs_label_plots="64bit netcdf4_baseline comparison_baseline netcdf4_chunk comparison_chunk collective_read"
+dirs_label_plots="64bit netcdf4_baseline netcdf4_baseline_pctdiff netcdf4_chunk netcdf4_chunk_pctdiff netcdf4_collective_read netcdf4_collective_read_pctdiff"
 dirs_all="$dirs_label_plots netcdf4_deflate"
 
 # Clean existing files
@@ -22,12 +24,17 @@ awk -f format_data.awk $perf_log
 # Generate netcdf4-64bit data
 for f in {96,384,3072,6144}.{read,write}_time
 do
-    paste $data_basedir/64bit/$f $data_basedir/netcdf4_baseline/$f | awk -f merge.awk >$data_basedir/comparison_baseline/$f
+    # NetCDF4 baseline, compared to 64bit
+    paste $data_basedir/64bit/$f $data_basedir/netcdf4_baseline/$f | awk -f merge.awk >$data_basedir/netcdf4_baseline_pctdiff/$f
 
-    if [[ -f $data_basedir/netcdf4_chunk/$f ]]
-    then
-        paste $data_basedir/64bit/$f $data_basedir/netcdf4_chunk/$f | awk -f merge.awk >$data_basedir/comparison_chunk/$f
-    fi
+    # Netcdf4 with chunking, compared to 64bit
+    paste <(awk '$2 == 1' $data_basedir/64bit/$f) $data_basedir/netcdf4_chunk/$f | awk -f merge.awk >$data_basedir/netcdf4_chunk_pctdiff/$f
+done
+
+for g in $GRIDS
+do
+    f="${g}.read_time"
+    paste <(awk '$1 == $2' $data_basedir/64bit/$f) $data_basedir/netcdf4_collective_read/$f | awk -f merge.awk >$data_basedir/netcdf4_collective_read_pctdiff/$f
 done
 
 for d in $dirs_label_plots
@@ -37,16 +44,18 @@ do
 done
 
 cd $data_basedir/netcdf4_deflate
-for n in 96 384 3072 6144
+for n in $GRIDS
 do
     for metric in read write
     do
-        $basedir/plot_deflate_level.gnuplot $n $metric
+        echo "Skipping deflate level plot for $n ... $metric"
+        #$basedir/plot_deflate_level.gnuplot $n $metric
     done
 done
 
 # Move plots into a plots/ directory.
-for d in $dirs_all
+#for d in $dirs_all
+for d in $dirs_label_plots
 do
     mv $data_basedir/$d/*.png $plot_basedir/$d/
 done
@@ -54,4 +63,4 @@ done
 # Transfer plots to GFDL
 module load gcp
 timestamp=`date +%s`
-gcp -r -cd $plot_basedir gfdl:~/netcdf4_plots/$timestamp
+gcp -r -cd $plot_basedir/ gfdl:~/netcdf4_plots/$timestamp/

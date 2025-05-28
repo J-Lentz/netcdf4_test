@@ -51,6 +51,6 @@ BEGIN {
 
         # netcdf4 collective reads (no chunking; no deflate level; no shuffle)
 	if (netcdf_format == "netcdf4" && chunk_size_x*chunk_size_y*chunk_size_z == 0 && deflate_level==0 && shuffle=="false" && use_collective=="true") {
-            print layout_x, layout_io_x, 1000*read_time  >> (BASEDIR "collective_read/" nx ".read_time")
+            print layout_x, layout_io_x, 1000*read_time  >> (BASEDIR "netcdf4_collective_read/" nx ".read_time")
 	}
 }
